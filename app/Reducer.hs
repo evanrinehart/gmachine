@@ -19,36 +19,34 @@ reduceToWHNF addr = unlessM (objectIsWHNF addr) $ do
 
     reduceToWHNF addr
 
--- starting at addr look for outermost reducible expression
--- and reduce it. May require recursively reducing argument(s) to WHNF
+-- starting at addr look for outermost reducible expression and reduce it.
 findAndReduceRedexUnder :: Addr -> Heap ()
 findAndReduceRedexUnder addr = do
     cell <- peek addr
     case cell of
         HA l r -> do
+            -- consider 1 level app-node (lambda, 1-arg built-in)
             cellL <- peek l
             case cellL of
-                -- 1 argument app node redex?
                 HL x body -> reduceLambda addr body x r
                 HB BIFst  -> reduceFst addr r
                 HB BISnd  -> reduceSnd addr r
                 HB BIPlus -> error "not fully-applied built-in +"
                 HB BICond -> error "not fully-applied built-in cond"
-                -- keep looking
                 HA l2 r2 -> do
+                    -- consider 2 level app-node (2-arg built-in)
                     cellL2 <- peek l2
                     case cellL2 of
-                        -- 2 argument app node redex?
                         HB BIPlus -> reducePlus addr r2 r
                         HB BICond -> error "not fully-applied built-in cond"
                         HA l3 r3  -> do
+                            -- consider 3 level app-node (3-arg built-in)
                             cellL3 <- peek l3
                             case cellL3 of
-                                -- 3 argument app node redex?
                                 HB BICond -> reduceCond addr r3 r2 r
-                                -- go down 1 and keep looking
+                                -- go down 1 and try again
                                 _         -> findAndReduceRedexUnder l
-                        -- go down 1 and keep looking
+                        -- go down 1 and try again
                         _ -> findAndReduceRedexUnder l
                 _ -> error ("bad app node: " ++ show (HA l r) ++ " cellL = " ++ show cellL)
         _ -> error "redex not found"
@@ -129,7 +127,7 @@ cloneSubstituting sourceAddr x argAddr = do
         HB _ -> return sourceAddr
         HV _ -> return sourceAddr -- this would only happen for unmatching vars
         HL y body
-            | x == y -> return sourceAddr -- shadowed variable, static lambda
+            | x == y -> return sourceAddr -- shadowed variable, "static" lambda
             | otherwise -> do
                 addr <- matchOrClone x body argAddr
                 newCell (HL y addr)
@@ -143,7 +141,6 @@ cloneSubstituting sourceAddr x argAddr = do
             newCell (HA addr1 addr2)
         OO -> error "shouldn't be cloning non-existent cells"
 
-                        
 objectIsWHNF :: Addr -> Heap Bool
 objectIsWHNF addr = do
     cell <- peek addr
